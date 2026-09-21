@@ -1,4 +1,5 @@
-python-telegram-bot==20.7
+python-telegram-bot==13.15
+yt-dlp
 Pillow==10.4.0
 moviepy==1.0.3
 imageio==2.34.1
