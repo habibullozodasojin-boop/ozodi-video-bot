@@ -1,5 +1,6 @@
 python-telegram-bot==20.7
-Pillow==10.4.0
-imageio==2.34.1
-imageio-ffmpeg==0.4.9
-numpy==1.26.4
+Pillow
+imageio
+imageio-ffmpeg
+numpy
+requests
