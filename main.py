@@ -3,50 +3,38 @@ import telebot
 import urllib.parse
 import random
 import time
+import threading
+from flask import Flask
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-if not BOT_TOKEN:
-    print("ОШИБКА: Нет BOT_TOKEN в Render!")
-    exit(1)
-
 bot = telebot.TeleBot(BOT_TOKEN)
 
-STYLES = [
-    "beautiful girl in stylish modest winter clothes, full body, fashion photo, high quality",
-    "beautiful girl in elegant long dress, modest fashion, studio photo",
-    "beautiful girl in street style clothes jeans and jacket, full body, 4k"
-]
+# Маленький сайт для Render чтобы он не падал
+app = Flask(__name__)
+@app.route('/')
+def home():
+    return "Bot is Live!"
+
+def run_flask():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
+
+STYLES = ["beautiful girl in stylish modest clothes, fashion photo"]
 
 @bot.message_handler(commands=['start'])
-def start(message):
-    bot.send_message(message.chat.id, "Привет БОС! 🌙\nПиши /girl - скину образ")
+def start(m):
+    bot.send_message(m.chat.id, "Privet BOS! Pishi /girl")
 
 @bot.message_handler(commands=['girl'])
-def girl_cmd(message):
+def girl_cmd(m):
     style = random.choice(STYLES)
-    bot.send_message(message.chat.id, f"Рисую: {style}...")
-    encoded = urllib.parse.quote(style)
-    image_url = f"https://image.pollinations.ai/prompt/{encoded}?width=512&height=768&nologo=true&model=flux"
-    try:
-        bot.send_photo(message.chat.id, image_url, caption="Как тебе? Еще? /girl")
-    except Exception as e:
-        bot.send_message(message.chat.id, f"Ошибка: {e}")
+    url = f"https://image.pollinations.ai/prompt/{urllib.parse.quote(style)}?width=512&height=768&nologo=true"
+    bot.send_photo(m.chat.id, url, caption="Kak tebe? /girl")
 
-@bot.message_handler(func=lambda m: True)
-def custom_prompt(message):
-    if message.text.startswith('/'):
-        return
-    prompt = f"beautiful girl in {message.text}, modest fashionable clothes, full body"
-    bot.send_message(message.chat.id, f"Рисую: {prompt}...")
-    encoded = urllib.parse.quote(prompt)
-    image_url = f"https://image.pollinations.ai/prompt/{encoded}?width=512&height=768&nologo=true&model=flux"
-    try:
-        bot.send_photo(message.chat.id, image_url)
-    except:
-        bot.send_message(message.chat.id, "Попробуй другой текст")
+# Запускаем сайт в фоне
+threading.Thread(target=run_flask).start()
 
-# --- ВОТ ФИКС ОТ ОШИБКИ 409 ---
 bot.delete_webhook(drop_pending_updates=True)
 time.sleep(2)
-print("Бот запущен...")
-bot.infinity_polling(timeout=60, long_polling_timeout=60)
+print("Bot zapushen...")
+bot.infinity_polling()
