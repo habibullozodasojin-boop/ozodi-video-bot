@@ -2,77 +2,106 @@ import os, telebot, urllib.parse, random, time, threading, requests, io
 from flask import Flask
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-bot = telebot.TeleBot(BOT_TOKEN)
+bot = telebot.TeleBot(BOT_TOKEN, threaded=False)
 
+# Чтобы Render не спал
 app = Flask(__name__)
 @app.route('/')
-def home(): return "OK"
+def home(): return "OZODI VIDEO AI is Live!"
 def run_flask():
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
-threading.Thread(target=run_flask).start()
+threading.Thread(target=run_flask, daemon=True).start()
 
-def translate_en(t):
+# --- Перевод ---
+def to_english(text):
     try:
-        url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=en&dt=t&q={urllib.parse.quote(t)}"
-        j = requests.get(url, timeout=5).json()
-        return "".join([x[0] for x in j[0]])
-    except: return t
+        url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=en&dt=t&q={urllib.parse.quote(text)}"
+        r = requests.get(url, timeout=5).json()
+        return "".join([x[0] for x in r[0]])
+    except:
+        return text
 
-def ask_chat(text):
+# --- Чат как ChatGPT ---
+def chat_gpt(text):
     try:
-        # Простой рабочий API без ключа
-        prompt = urllib.parse.quote(text)
-        url = f"https://text.pollinations.ai/{prompt}"
-        r = requests.get(url, timeout=15)
-        if r.status_code == 200 and len(r.text) > 3:
-            return r.text[:2000]
+        # бесплатный чат API
+        sys = "You are OZODI AI, helpful assistant like ChatGPT. Speak in user's language (Tajik, Russian, English). Be friendly and short."
+        url = f"https://text.pollinations.ai/{urllib.parse.quote(text)}?model=openai&system={urllib.parse.quote(sys)}"
+        r = requests.get(url, timeout=20)
+        if r.status_code == 200 and len(r.text) > 2:
+            return r.text[:3500]
     except: pass
-    return "Салом БОС! Я на связи 🔥 Напиши 'расми духтари зебо' и я сделаю фото!"
+    return "Салом! Я OZODI AI 🔥 Спроси меня что угодно, или скажи 'сделай фото'"
 
-def send_photo_real(chat_id, user_text):
-    en = translate_en(user_text)
-    # Промт чтоб не было монстров
-    good_prompt = f"{en}, photorealistic beautiful Tajik girl, natural face, symmetrical eyes, cute, elegant, realistic skin, 8k, not deformed"
-    bad = "deformed, monster, ugly, extra limbs, bad anatomy, cartoon, anime, blurry"
+# --- Фото 100% рабочий ---
+def send_photo(chat_id, user_text):
+    en = to_english(user_text)
+    low = en.lower()
 
-    bot.send_message(chat_id, f"⏳ Делаю: {user_text}...")
-    try:
-        img_url = f"https://image.pollinations.ai/prompt/{urllib.parse.quote(good_prompt)}?model=flux-realism&width=768&height=1152&nologo=true&seed={random.randint(1,9999999)}&negative_prompt={urllib.parse.quote(bad)}&enhance=true"
-        # ВАЖНО: качаем сами, чтобы не было ошибки 400
-        resp = requests.get(img_url, timeout=80)
-        if resp.status_code == 200:
-            bio = io.BytesIO(resp.content)
-            bio.name = "photo.jpg"
-            bot.send_photo(chat_id, bio, caption=f"✅ {user_text}")
-            return
-        else:
-            bot.send_message(chat_id, "Сервер занят, попробуй еще раз через 10 сек")
-    except Exception as e:
-        bot.send_message(chat_id, f"Ошибка генерации, попробуй еще раз: {e}")
+    # Умный промт: если девушка - добавляем красоту, если флаг/горы - не добавляем
+    if any(w in low for w in ["girl", "woman", "girl", "духтар", "девуш", "woman"]):
+        prompt = f"{en}, photorealistic beautiful girl, natural symmetrical face, realistic skin, elegant, 8k, sharp focus, not deformed"
+        model = "flux-realism"
+    else:
+        prompt = f"{en}, photorealistic, ultra detailed, 8k, sharp focus, highly detailed, realistic"
+        model = "flux"
 
+    neg = "deformed, ugly, monster, extra limbs, bad anatomy, blurry, distorted, cartoon"
+
+    # 3 попытки если сервер занят
+    for attempt in range(3):
+        try:
+            bot.send_chat_action(chat_id, 'upload_photo')
+            img_url = f"https://image.pollinations.ai/prompt/{urllib.parse.quote(prompt)}?model={model}&width=1024&height=1024&nologo=true&seed={random.randint(1,9999999)}&negative_prompt={urllib.parse.quote(neg)}&enhance=true"
+            resp = requests.get(img_url, timeout=90)
+            if resp.status_code == 200 and len(resp.content) > 5000:
+                bio = io.BytesIO(resp.content)
+                bio.name = "ozodi.jpg"
+                bot.send_photo(chat_id, bio, caption=f"✅ {user_text}")
+                return True
+            time.sleep(2)
+        except Exception as e:
+            time.sleep(2)
+            continue
+
+    bot.send_message(chat_id, "Сервер картинок сейчас перегружен, попробуй еще раз через 15 сек ⏳")
+    return False
+
+# --- Команды ---
 @bot.message_handler(commands=['start'])
 def start(m):
-    bot.send_message(m.chat.id, "БОС я пофикшен! ✅\n\nПиши:\n- салом\n- расми духтари зебо\n- духтари точик")
+    bot.send_message(m.chat.id,
+        "Салом БОС! Я OZODI VIDEO AI 🔥\n\n"
+        "Я теперь как ChatGPT:\n"
+        "• Болтаю на таджикском, русском, английском\n"
+        "• Делаю ЛЮБЫЕ фото: флаг, горы, машина, девушки\n"
+        "Примеры:\n"
+        "салом чи хел?\n"
+        "расми парчами Точикистон\n"
+        "расми куххои Помир\n"
+        "духтари зебои точик\n"
+        "bmw m5 black"
+    )
 
 @bot.message_handler(content_types=['text'])
-def handler(m):
+def handle(m):
     txt = m.text.strip()
-    low = txt.lower()
-    if "send new post" in low: return
+    if not txt or "Send New Post" in txt: return
     if txt.startswith('/'): return
 
-    # СПИСОК СЛОВ ДЛЯ ФОТО - теперь ловит всё
-    photo_keys = ["расм", "сурат", "акс", "духтар", "девуш", "girl", "фото", "image", "photo", "зебо", "духт"]
-    is_photo = any(k in low for k in photo_keys)
+    low = txt.lower()
+    # Ключевые слова для фото
+    photo_words = ["расм", "сурат", "акс", "фото", "сделай", "соз", "генерир", "нарисуй", "image", "photo", "picture", "парчам", "кух", "мошин", "духтар", "девуш", "girl"]
 
-    if is_photo:
-        bot.send_chat_action(m.chat.id, 'upload_photo')
-        send_photo_real(m.chat.id, txt)
+    if any(w in low for w in photo_words):
+        send_photo(m.chat.id, txt)
     else:
         bot.send_chat_action(m.chat.id, 'typing')
-        ans = ask_chat(txt)
-        bot.send_message(m.chat.id, ans)
+        answer = chat_gpt(txt)
+        bot.send_message(m.chat.id, answer)
 
+# --- Запуск ---
 bot.delete_webhook(drop_pending_updates=True)
 time.sleep(2)
-bot.infinity_polling()
+print("OZODI AI 100% started")
+bot.infinity_polling(timeout=60, long_polling_timeout=60)
