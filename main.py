@@ -6,75 +6,73 @@ bot = telebot.TeleBot(BOT_TOKEN)
 
 app = Flask(__name__)
 @app.route('/')
-def home(): return "Bot is Live!"
+def home(): return "OK"
 def run_flask():
     app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 10000)))
 threading.Thread(target=run_flask).start()
 
-BLOCKED = ["Send New Post to Subscribers"]
-
-def translate_en(text):
+def translate_en(t):
     try:
-        url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=en&dt=t&q={urllib.parse.quote(text)}"
-        r = requests.get(url, timeout=5).json()
-        return "".join([x[0] for x in r[0]])
-    except: return text
+        url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=en&dt=t&q={urllib.parse.quote(t)}"
+        j = requests.get(url, timeout=5).json()
+        return "".join([x[0] for x in j[0]])
+    except: return t
 
-def ask_chatgpt(text, chat_id):
-    # Делаем как ChatGPT / Gemini - бесплатно через Pollinations
-    system = "You are ChatGPT-like AI, friendly, smart. You speak Tajik, Russian, English. Answer in user's language. Keep short."
+def ask_chat(text):
     try:
-        # Используем бесплатный API чата
-        url = f"https://text.pollinations.ai/{urllib.parse.quote(text)}"
-        params = {"model": "openai", "system": system}
-        r = requests.get(url, params=params, timeout=30)
-        if r.status_code == 200 and len(r.text) > 5:
-            return r.text
-        else:
-            return "Салом! Я тут, БОС! Что хочешь спросить?"
-    except Exception as e:
-        return f"Я тут! Спроси что-нибудь или скажи 'сделай фото девушки'"
-
-def make_photo(chat_id, original):
-    en = translate_en(original)
-    prompt = f"{en}, photorealistic, beautiful, natural symmetrical face, ultra detailed, 8k realistic photo, sharp, not deformed"
-    neg = "deformed, ugly, monster, extra limbs, bad face, cartoon, anime, blurry, distorted"
-    try:
-        img_url = f"https://image.pollinations.ai/prompt/{urllib.parse.quote(prompt)}?model=flux-realism&width=768&height=1152&nologo=true&seed={random.randint(1,999999)}&negative_prompt={urllib.parse.quote(neg)}&enhance=true"
-        resp = requests.get(img_url, timeout=70)
-        if resp.status_code == 200:
-            bot.send_photo(chat_id, io.BytesIO(resp.content), caption=f"✅ {original}")
-            return True
+        # Простой рабочий API без ключа
+        prompt = urllib.parse.quote(text)
+        url = f"https://text.pollinations.ai/{prompt}"
+        r = requests.get(url, timeout=15)
+        if r.status_code == 200 and len(r.text) > 3:
+            return r.text[:2000]
     except: pass
-    return False
+    return "Салом БОС! Я на связи 🔥 Напиши 'расми духтари зебо' и я сделаю фото!"
+
+def send_photo_real(chat_id, user_text):
+    en = translate_en(user_text)
+    # Промт чтоб не было монстров
+    good_prompt = f"{en}, photorealistic beautiful Tajik girl, natural face, symmetrical eyes, cute, elegant, realistic skin, 8k, not deformed"
+    bad = "deformed, monster, ugly, extra limbs, bad anatomy, cartoon, anime, blurry"
+
+    bot.send_message(chat_id, f"⏳ Делаю: {user_text}...")
+    try:
+        img_url = f"https://image.pollinations.ai/prompt/{urllib.parse.quote(good_prompt)}?model=flux-realism&width=768&height=1152&nologo=true&seed={random.randint(1,9999999)}&negative_prompt={urllib.parse.quote(bad)}&enhance=true"
+        # ВАЖНО: качаем сами, чтобы не было ошибки 400
+        resp = requests.get(img_url, timeout=80)
+        if resp.status_code == 200:
+            bio = io.BytesIO(resp.content)
+            bio.name = "photo.jpg"
+            bot.send_photo(chat_id, bio, caption=f"✅ {user_text}")
+            return
+        else:
+            bot.send_message(chat_id, "Сервер занят, попробуй еще раз через 10 сек")
+    except Exception as e:
+        bot.send_message(chat_id, f"Ошибка генерации, попробуй еще раз: {e}")
 
 @bot.message_handler(commands=['start'])
 def start(m):
-    bot.send_message(m.chat.id, "Салом БОС! Я теперь как ChatGPT + Gemini 🔥\n\nЯ умею:\n1. Болтать на любом языке\n2. Делать фото\n\nНапиши:\n`Салом чи хел?`\n`Кто ты?`\n`Сделай фото красивой таджички`\n`Расм соз духтари зебо`")
+    bot.send_message(m.chat.id, "БОС я пофикшен! ✅\n\nПиши:\n- салом\n- расми духтари зебо\n- духтари точик")
 
 @bot.message_handler(content_types=['text'])
-def all_text(m):
-    txt = m.text
-    if any(b.lower() in txt.lower() for b in BLOCKED) or txt.startswith('/'): return
-    if len(txt) < 2: return
+def handler(m):
+    txt = m.text.strip()
+    low = txt.lower()
+    if "send new post" in low: return
+    if txt.startswith('/'): return
 
-    # Если просит фото - делаем фото
-    photo_words = ["фото", "расм", "сурат", "акс", "image", "photo", "духтар", "девуш", "girl", "соз", "сделай", "генерир", "draw"]
-    is_photo = any(w in txt.lower() for w in photo_words)
+    # СПИСОК СЛОВ ДЛЯ ФОТО - теперь ловит всё
+    photo_keys = ["расм", "сурат", "акс", "духтар", "девуш", "girl", "фото", "image", "photo", "зебо", "духт"]
+    is_photo = any(k in low for k in photo_keys)
 
     if is_photo:
         bot.send_chat_action(m.chat.id, 'upload_photo')
-        ok = make_photo(m.chat.id, txt)
-        if not ok:
-            ans = ask_chatgpt(txt, m.chat.id)
-            bot.send_message(m.chat.id, ans)
+        send_photo_real(m.chat.id, txt)
     else:
-        # Просто болтаем как ChatGPT
         bot.send_chat_action(m.chat.id, 'typing')
-        answer = ask_chatgpt(txt, m.chat.id)
-        bot.send_message(m.chat.id, answer)
+        ans = ask_chat(txt)
+        bot.send_message(m.chat.id, ans)
 
 bot.delete_webhook(drop_pending_updates=True)
 time.sleep(2)
-print("ChatGPT Bot zapushen...")
 bot.infinity_polling()
